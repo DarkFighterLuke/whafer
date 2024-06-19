@@ -35,7 +35,7 @@ class Progetto:
         if not (self.percorso / "sorgenti" / "msgstore.db").exists():
             percorsoChiave = self.percorso / "encrypted" / "whatsapp.cryptkey"
             percorsoMsgstore = list((self.percorso / "encrypted").glob("**/msgstore.db.crypt*"))[0]
-            subprocess.run(["decrypt14_15", 
+            subprocess.run(["wadecrypt", 
                             str(percorsoChiave),
                             str(percorsoMsgstore),
                             str(self.percorso / "sorgenti" / "msgstore.db")])
@@ -45,12 +45,15 @@ class Progetto:
             if list((self.percorso / "encrypted").glob("**/wa.db.crypt*")):
                 percorsoChiave = self.percorso / "encrypted" / "whatsapp.cryptkey"
                 percorsoWa = list((self.percorso / "encrypted").glob("**/wa.db.crypt*"))[0]
-                subprocess.run(["decrypt14_15", 
+                subprocess.run(["wadecrypt", 
                                 str(percorsoChiave),
                                 str(percorsoWa),
                                 str(self.percorso / "sorgenti" / "wa.db")])
 
-        self.sorgentefile = whafer.db.SorgenteDB(self.percorso / "sorgenti" / "msgstore.db")
+        if (self.percorso / "sorgenti" / "wa.db").exists():
+            self.sorgentefile = whafer.db.SorgenteDB(self.percorso / "sorgenti" / "msgstore.db", self.percorso / "sorgenti" / "wa.db")
+        else:
+            self.sorgentefile = whafer.db.SorgenteDB(self.percorso / "sorgenti" / "msgstore.db")
 
         # Esegui gli hash
         funzione_hash = costruisci_calcola_hash(hashlib.sha256, hashlib.md5)

@@ -23,12 +23,21 @@ class SorgenteDB():
     def contatti(self)->list[Contatto]:
         #TODO nome dei contatti
         cursore = self.msgstore.cursor()
-        cursore.execute("SELECT _id, user "
+        cursore.execute("SELECT _id, user, raw_string "
                         "FROM jid "
                         f"WHERE type = {TIPI_CONTATTI.get('Contatto')}")
-        _id, numeriTelefonici = zip(*cursore.fetchall())
-        nomi = numeriTelefonici
-        contatti = list(map(ContattoDB, _id, numeriTelefonici, nomi))
+        ids, numeriTelefonici, raw_strings = zip(*cursore.fetchall())
+
+        contacts_cursor = self.wa.cursor()
+        display_names = []
+        for rs in raw_strings:
+            contacts_cursor.execute("SELECT display_name "
+                                    "FROM wa_contacts "
+                                    f"WHERE jid = '{rs}'")
+            display_name = contacts_cursor.fetchone()
+            display_names.append(display_name[0])
+            
+        contatti = list(map(ContattoDB, ids, numeriTelefonici, display_names))
         return contatti
     
     @property
