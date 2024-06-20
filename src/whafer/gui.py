@@ -357,12 +357,17 @@ class ContenutiView(BaseView):
         self.frameContatti = ctk.CTkFrame(self.frameOggetti)
         self.contattiTabella = Table(self.frameContatti, dataframe=self.contatti)
         self.pulsanteContatti = ctk.CTkButton(self.frameOggetti, text="Esporta contatti", command=self.reporta_contatti)
+        # self.pulsanteContattiFiltro = ctk.CTkButton(self.frameOggetti, text="Esporta selezione attiva", command=self.report_active_filter_contacts)
+        # self.pulsanteSelectContactsColumns = ctk.CTkButton(self.frameOggetti, text="Seleziona colonne", command=self.select_columns(self.contatti.columns, "contatti"))
+
         self.gruppi = pandas.read_sql_query("SELECT * FROM jid JOIN chat_view ON chat_view.raw_string_jid = jid.raw_string WHERE jid.type = 1", self.db)
  
         self.intestazioneGruppi = ctk.CTkLabel(self.frameOggetti, text="Gruppi", font=ctk.CTkFont(size=40, weight="bold"), justify="left")
         self.frameGruppi = ctk.CTkFrame(self.frameOggetti)
         self.gruppiTabella = Table(self.frameGruppi, dataframe=self.gruppi)
         self.pulsanteGruppi = ctk.CTkButton(self.frameOggetti, text="Esporta gruppi", command=self.reporta_gruppi)
+        # self.pulsanteGruppiFiltro = ctk.CTkButton(self.frameOggetti, text="Esporta selezione attiva", command=self.report_active_filter_groups)
+        # self.pulsanteSelectGroupsColumns = ctk.CTkButton(self.frameOggetti, text="Seleziona colonne", command=self.select_columns(self.gruppi.columns, "gruppi"))
 
         self.messages_query = """SELECT cv.*,
 m."_id" AS message_id, 
@@ -413,26 +418,137 @@ LEFT JOIN message_location ml ON m."_id" = ml.message_row_id
         self.pulsanteMessaggi = ctk.CTkButton(self.frameOggetti, text="Esporta messaggi", command=self.reporta_messaggi)
         self.pulsanteMessaggiPrivati = ctk.CTkButton(self.frameOggetti, text="Esporta solo messaggi privati", command=self.report_private_messages)
         self.pulsanteMessaggiGruppi = ctk.CTkButton(self.frameOggetti, text="Esporta solo messaggi gruppi", command=self.report_groups_messages)
+        self.pulsanteMessaggiFiltro = ctk.CTkButton(self.frameOggetti, text="Esporta selezione attiva", command=self.report_active_filter_messages)
+        self.pulsanteSelectMessagesColumns = ctk.CTkButton(self.frameOggetti, text="Seleziona colonne", command=self.select_columns)
 
         self.intestazioneContatti.pack(anchor="w", padx=10, pady=(10,0))
         self.frameContatti.pack(fill="x", padx=10, pady=(10,0))
         self.contattiTabella.show()
         self.contattiTabella.redraw()
         self.pulsanteContatti.pack(anchor="w", padx=10, pady=(10,0))
+        # self.pulsanteContattiFiltro.pack(anchor="w", padx=10, pady=(10,0))
+        # self.pulsanteSelectContactsColumns.pack(anchor="w", padx=10, pady=(10,0))
 
         self.intestazioneGruppi.pack(anchor="w", padx=10, pady=(10,0))
         self.frameGruppi.pack(fill="x", padx=10, pady=(10,0))
         self.gruppiTabella.show()
         self.gruppiTabella.redraw()
         self.pulsanteGruppi.pack(anchor="w", padx=10, pady=(10,0))
+        # self.pulsanteGruppiFiltro.pack(anchor="w", padx=10, pady=(10,0))
+        # self.pulsanteSelectGroupsColumns.pack(anchor="w", padx=10, pady=(10,0))
 
         self.intestazioneMessaggi.pack(anchor="w", padx=10, pady=(10,0))
         self.frameMessaggi.pack(fill="x", padx=10, pady=(10,0))
         self.messaggiTabella.show()
         self.messaggiTabella.redraw()
         self.pulsanteMessaggi.pack(anchor="w", padx=10, pady=(10,0))
-        self.pulsanteMessaggiGruppi.pack(anchor="w", padx=10, pady=(10,0))
         self.pulsanteMessaggiPrivati.pack(anchor="w", padx=10, pady=(10,0))
+        self.pulsanteMessaggiGruppi.pack(anchor="w", padx=10, pady=(10,0))
+        self.pulsanteMessaggiFiltro.pack(anchor="w", padx=10, pady=(10,0))
+        self.pulsanteSelectMessagesColumns.pack(anchor="w", padx=10, pady=(10,0))
+
+        self.selected_contacts_columns = self.contatti.columns.tolist()  # Initialize with all columns
+        self.selected_groups_columns = self.gruppi.columns.tolist()  # Initialize with all columns
+        self.selected_messages_columns = self.messaggi.columns.tolist()  # Initialize with all columns
+
+    def select_columns(self):
+        self.select_columns_dialog = ctk.CTkToplevel(self)
+        self.select_columns_dialog.title("Seleziona Colonne")
+
+        top_frame = ctk.CTkFrame(self.select_columns_dialog)
+        top_frame.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkButton(top_frame, text="Seleziona Tutto", command=lambda: self.select_deselect_all(True)).pack(side="left")
+        ctk.CTkButton(top_frame, text="Deseleziona Tutto", command=lambda: self.select_deselect_all(False)).pack(side="left")
+        ctk.CTkButton(top_frame, text="OK", command=self.apply_column_selection).pack(side="right")
+
+        scrollable_frame = ctk.CTkScrollableFrame(self.select_columns_dialog)
+        scrollable_frame.pack(fill="both", expand=True)
+
+        # if table == "contatti":
+        #     self.contatti_column_vars = {}
+        # elif table == "gruppi":
+        #     self.gruppi_column_vars = {}
+        # elif table == "messaggi":
+        #     self.messaggi_column_vars = {}
+        self.column_vars = {}
+        for column in self.messaggi.columns:
+            var = ctk.BooleanVar(value=column in self.selected_messages_columns)
+            self.column_vars[column] = var
+            # if table == "contatti":
+            #     self.contatti_column_vars[column] = var
+            # elif table == "gruppi":
+            #     self.gruppi_column_vars[column] = var
+            # elif table == "messaggi":
+            #     self.messaggi_column_vars[column] = var
+            ctk.CTkCheckBox(scrollable_frame, text=column, variable=var).pack(anchor="w")
+
+    def select_deselect_all(self, select=True):
+        for var in self.column_vars.values():
+            var.set(select)
+        # if table == "contatti":
+        #     for var in self.contatti_column_vars.values():
+        #         var.set(select)
+        # elif table == "gruppi":
+        #     for var in self.gruppi.values():
+        #         var.set(select)
+        # elif table == "messaggi":
+        #     for var in self.messaggi.values():
+        #         var.set(select)
+
+    def apply_column_selection(self):
+        # self.selected_contacts_columns = [column for column, var in self.contatti_column_vars.items() if var.get()]
+        # self.selected_groups_columns = [column for column, var in self.gruppi_column_vars.items() if var.get()]
+        self.selected_messages_columns = [column for column, var in self.column_vars.items() if var.get()]
+        self.recreate_tables()
+        self.select_columns_dialog.destroy()
+
+    def recreate_tables(self):
+        # # Remove and recreate the contacts table
+        # self.frameContatti.pack_forget()
+        # self.pulsanteContatti.pack_forget()
+        # self.pulsanteContattiFiltro.pack_forget()
+        # # self.pulsanteSelectContactsColumns.pack_forget()
+        # self.frameContatti = ctk.CTkFrame(self.frameOggetti)
+        # self.frameContatti.pack(fill="x", padx=10, pady=(10,0))
+        # self.pulsanteContatti.pack(anchor="w", padx=10, pady=(10,0))
+        # self.pulsanteContattiFiltro.pack(anchor="w", padx=10, pady=(10,0))
+        # # self.pulsanteSelectContactsColumns.pack(anchor="w", padx=10, pady=(10,0))
+        # self.contattiTabella = Table(self.frameContatti, dataframe=self.filter_columns(self.contatti))
+        # self.contattiTabella.show()
+
+        # # Remove and recreate the groups table
+        # self.frameGruppi.pack_forget()
+        # self.pulsanteGruppiFiltro.pack_forget()
+        # # self.pulsanteSelectGroupsColumns.pack_forget()
+        # self.frameGruppi = ctk.CTkFrame(self.frameOggetti)
+        # self.frameGruppi.pack(fill="x", padx=10, pady=(10,0))
+        # self.pulsanteGruppi.pack(anchor="w", padx=10, pady=(10,0))
+        # self.pulsanteGruppiFiltro.pack(anchor="w", padx=10, pady=(10,0))
+        # # self.pulsanteSelectGroupsColumns.pack(anchor="w", padx=10, pady=(10,0))
+        # self.gruppiTabella = Table(self.frameGruppi, dataframe=self.filter_columns(self.gruppi))
+        # self.gruppiTabella.show()
+
+        # Remove and recreate the messages table
+        self.frameMessaggi.pack_forget()
+        self.pulsanteMessaggi.pack_forget()
+        self.pulsanteMessaggiGruppi.pack_forget()
+        self.pulsanteMessaggiPrivati.pack_forget()
+        self.pulsanteMessaggiFiltro.pack_forget()
+        # self.pulsanteSelectMessagesColumns.pack_forget()
+        self.frameMessaggi = ctk.CTkFrame(self.frameOggetti)
+        self.frameMessaggi.pack(fill="x", padx=10, pady=(10,0))
+        self.pulsanteMessaggi.pack(anchor="w", padx=10, pady=(10,0))
+        self.pulsanteMessaggiPrivati.pack(anchor="w", padx=10, pady=(10,0))
+        self.pulsanteMessaggiGruppi.pack(anchor="w", padx=10, pady=(10,0))
+        self.pulsanteMessaggiFiltro.pack(anchor="w", padx=10, pady=(10,0))
+        # self.pulsanteSelectMessagesColumns.pack(anchor="w", padx=10, pady=(10,0))
+        self.messaggiTabella = Table(self.frameMessaggi, dataframe=self.filter_columns(self.messaggi))
+        self.messaggiTabella.show()
+
+    def filter_columns(self, dataframe):
+        existing_columns = [col for col in self.selected_messages_columns if col in dataframe.columns]
+        return dataframe[existing_columns]
 
     def filtra_contatti(self):
         pass
@@ -474,6 +590,27 @@ LEFT JOIN message_location ml ON m."_id" = ml.message_row_id
         
         with open(percorso, mode="wb") as file:
             private_messages.to_csv(file)
+
+    def report_active_filter_contacts(self):
+        filtered_contacts = self.filter_columns(self.messaggi)
+        percorso = (self.progetto.percorso / "reports" / f"contatti_filtrati_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv")
+        
+        with open(percorso, mode="wb") as file:
+            filtered_contacts.to_csv(file)
+
+    def report_active_filter_groups(self):
+        filtered_groups = self.filter_columns(self.messaggi)
+        percorso = (self.progetto.percorso / "reports" / f"gruppi_filtrati_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv")
+        
+        with open(percorso, mode="wb") as file:
+            filtered_groups.to_csv(file)
+
+    def report_active_filter_messages(self):
+        filtered_messages = self.filter_columns(self.messaggi)
+        percorso = (self.progetto.percorso / "reports" / f"messaggi_filtrati_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv")
+        
+        with open(percorso, mode="wb") as file:
+            filtered_messages.to_csv(file)
 
 class Applicazione(ctk.CTkFrame):
     def __init__(self, parent, progetto: Progetto):
