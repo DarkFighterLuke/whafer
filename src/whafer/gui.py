@@ -364,12 +364,55 @@ class ContenutiView(BaseView):
         self.gruppiTabella = Table(self.frameGruppi, dataframe=self.gruppi)
         self.pulsanteGruppi = ctk.CTkButton(self.frameOggetti, text="Esporta gruppi", command=self.reporta_gruppi)
 
-        self.messaggi = pandas.read_sql_query("SELECT * FROM message_view", self.db)
+        self.messages_query = """SELECT cv.*,
+m."_id" AS message_id, 
+m.sort_id, 
+m.chat_row_id, 
+m.from_me, 
+m.key_id, 
+m.sender_jid_row_id, 
+m.status, 
+m.broadcast, 
+m.recipient_count, 
+m.participant_hash, 
+m.origination_flags, 
+m.origin,
+m."timestamp", 
+m.received_timestamp,
+m.receipt_server_timestamp,
+m.message_type,
+m.text_data,
+m.starred,
+m.lookup_tables,
+m.message_add_on_flags,
+mm.message_url,
+mm.mime_type,
+mm.media_name,
+mm.media_caption,
+mm.media_duration,
+mm.file_path,
+mm.file_size,
+mm.file_length,
+mm.file_hash,
+mm.original_file_hash,
+ml.latitude,
+ml.longitude,
+ml.place_name,
+ml.place_address,
+ml.url
+FROM chat_view cv 
+LEFT JOIN message m ON cv."_id" = m.chat_row_id 
+LEFT JOIN message_media mm ON m."_id" = mm.message_row_id
+LEFT JOIN message_location ml ON m."_id" = ml.message_row_id
+{0}"""
+        self.messaggi = pandas.read_sql_query(self.messages_query.format(""), self.db)
 
         self.intestazioneMessaggi = ctk.CTkLabel(self.frameOggetti, text="Messaggi", font=ctk.CTkFont(size=40, weight="bold"), justify="left")
         self.frameMessaggi = ctk.CTkFrame(self.frameOggetti)
         self.messaggiTabella = Table(self.frameMessaggi, dataframe=self.messaggi)
         self.pulsanteMessaggi = ctk.CTkButton(self.frameOggetti, text="Esporta messaggi", command=self.reporta_messaggi)
+        self.pulsanteMessaggiPrivati = ctk.CTkButton(self.frameOggetti, text="Esporta solo messaggi privati", command=self.report_private_messages)
+        self.pulsanteMessaggiGruppi = ctk.CTkButton(self.frameOggetti, text="Esporta solo messaggi gruppi", command=self.report_groups_messages)
 
         self.intestazioneContatti.pack(anchor="w", padx=10, pady=(10,0))
         self.frameContatti.pack(fill="x", padx=10, pady=(10,0))
@@ -388,6 +431,8 @@ class ContenutiView(BaseView):
         self.messaggiTabella.show()
         self.messaggiTabella.redraw()
         self.pulsanteMessaggi.pack(anchor="w", padx=10, pady=(10,0))
+        self.pulsanteMessaggiGruppi.pack(anchor="w", padx=10, pady=(10,0))
+        self.pulsanteMessaggiPrivati.pack(anchor="w", padx=10, pady=(10,0))
 
     def filtra_contatti(self):
         pass
@@ -415,6 +460,20 @@ class ContenutiView(BaseView):
         
         with open(percorso, mode="wb") as file:
             self.messaggi.to_csv(file)
+
+    def report_groups_messages(self):
+        groups_messages = pandas.read_sql_query(self.messages_query.format("WHERE cv.raw_string_jid LIKE '%@g.us'"), self.db)
+        percorso = (self.progetto.percorso / "reports" / f"messaggi_gruppi_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv")
+        
+        with open(percorso, mode="wb") as file:
+            groups_messages.to_csv(file)
+
+    def report_private_messages(self):
+        private_messages = pandas.read_sql_query(self.messages_query.format("WHERE cv.raw_string_jid LIKE '%@s.whatsapp.net'"), self.db)
+        percorso = (self.progetto.percorso / "reports" / f"messaggi_privati_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv")
+        
+        with open(percorso, mode="wb") as file:
+            private_messages.to_csv(file)
 
 class Applicazione(ctk.CTkFrame):
     def __init__(self, parent, progetto: Progetto):
