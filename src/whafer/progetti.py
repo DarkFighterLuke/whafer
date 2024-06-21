@@ -11,6 +11,9 @@ class Progetto:
     def __init__(self, path: str, sorgenti: list = None, encrypted: list = None):
         self.percorso = Path(path)
 
+        if not (self.percorso / "bin").exists():
+            (self.percorso / "bin").mkdir()
+
         if not (self.percorso / "sorgenti").exists():
             (self.percorso / "sorgenti").mkdir()
 
