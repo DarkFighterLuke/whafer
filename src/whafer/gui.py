@@ -1,6 +1,11 @@
 from itertools import islice
+import mimetypes
+import os
+import subprocess
+import threading
 import tkinter as tk
 from tkinter import ttk
+from tkinter import messagebox
 import customtkinter as ctk
 import PIL
 import pandas
@@ -8,6 +13,8 @@ import sqlite3
 from datetime import datetime
 from pandastable import Table, dialogs
 from importlib.resources import files
+
+import requests
 from whafer.interfacce import Sorgente, Contatto, Gruppo, Messaggio
 from whafer.progetti import Progetto
 
@@ -612,6 +619,127 @@ LEFT JOIN message_location ml ON m."_id" = ml.message_row_id
         with open(percorso, mode="wb") as file:
             filtered_messages.to_csv(file)
 
+class MediaView(BaseView):
+    def __init__(self, parent, progetto: Progetto):
+        super().__init__(parent)
+        self.objects_frame = ctk.CTkScrollableFrame(self)
+        self.objects_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.progetto = progetto
+        self.db = sqlite3.connect(str(self.progetto.percorso / "sorgenti" / "msgstore.db"))
+
+        self.media_messages = pandas.read_sql_query("""
+SELECT mm.*, m.from_me  
+FROM message_media mm
+LEFT JOIN message m ON m."_id" = mm.message_row_id""", self.db)
+
+        self.media_header = ctk.CTkLabel(self.objects_frame, text="Media", font=ctk.CTkFont(size=40, weight="bold"), justify="left")
+        self.media_frame = ctk.CTkFrame(self.objects_frame)
+        self.media_table = Table(self.media_frame, dataframe=self.media_messages)
+        self.media_button = ctk.CTkButton(self.objects_frame, text="Esporta lista", command=self.media_report)
+
+        self.media_header.pack(anchor="w", padx=10, pady=(10,0))
+        self.media_frame.pack(fill="x", padx=10, pady=(10,0))
+        self.media_table.show()
+        self.media_table.redraw()
+        self.media_button.pack(anchor="w", padx=10, pady=(10,0))
+
+        self.media_download_header = ctk.CTkLabel(self.objects_frame, text="Download Media", font=ctk.CTkFont(size=40, weight="bold"), justify="left")
+        self.media_download_frame = ctk.CTkFrame(self.objects_frame)
+        self.row_id_entry_label = ctk.CTkLabel(self.objects_frame, text="Enter Row ID:", justify="left")
+        self.row_id_entry = ctk.CTkEntry(self.objects_frame)
+        self.download_button = ctk.CTkButton(self.objects_frame, text="Download", command=self.start_download)
+
+        self.row_id_entry_label.pack(anchor="w", padx=10, pady=(10, 0))
+        self.row_id_entry.pack(anchor="w", padx=10, pady=(10, 0))
+        self.download_button.pack(anchor="w", padx=10, pady=(10, 0))
+
+        self.progress_bar = ctk.CTkProgressBar(self.objects_frame, mode='indeterminate')
+        self.progress_bar.pack(fill="x", padx=10, pady=(10, 0))
+
+    def media_report(self):
+        path = (self.progetto.percorso / "reports" / f"media_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv")
+        
+        with open(path, mode="wb") as file:
+            self.media_messages.to_csv(file)
+
+    def start_download(self):
+        try:
+            row_id = int(self.row_id_entry.get()) - 1
+            if row_id in self.media_messages.index:
+                self.progress_bar.start()  # Start progress indicator
+                threading.Thread(target=self.download_media, args=(row_id,)).start()
+            else:
+                messagebox.showerror("Error", "Invalid Row ID")
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid Row ID")
+
+    def download_media(self, row_id):
+        try:
+            selected_row = self.media_messages.loc[row_id]
+            url = selected_row['message_url']
+            if url is None:
+                print("Media download URL is NULL. Can't download this media")
+                messagebox.showerror("Failed", "Media download URL is NULL. Can't download this media")
+                return
+            
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+            
+            path = ""
+            wamd_type_id = -1
+            if selected_row['mime_type'] is None:
+                selected_row['mime_type'], _ = mimetypes.guess_type(selected_row['file_path'])
+
+            if 'image/' in selected_row['mime_type']:
+                wamd_type_id = 1
+                if selected_row['file_path'] is None:
+                    path = str(self.progetto.percorso / f"media/WhatsApp Images/IMG_message_row_id_{selected_row['message_row_id']}.jpeg.enc")
+                
+            elif 'video/' in selected_row['mime_type']:
+                wamd_type_id = 2
+                if selected_row['file_path'] is None:
+                    path = str(self.progetto.percorso / f"media/WhatsApp Video/VID_message_row_id_{selected_row['message_row_id']}.mp4.enc")
+            elif 'audio/' in selected_row['mime_type']:
+                wamd_type_id = 3
+                if selected_row['file_path'] is None:
+                    path = str(self.progetto.percorso / f"media/WhatsApp Audio/AUD_message_row_id_{selected_row['message_row_id']}.opus.enc")
+            else:
+                wamd_type_id = 4
+                if selected_row['file_path'] is None:
+                    # You have to guess what is the specific file type after it has been decrypted
+                    path = str(self.progetto.percorso / f"media/WhatsApp Documents/DOC_message_row_id_{selected_row['message_row_id']}.doc.enc")
+
+            if selected_row['file_path'] is not None:
+                path = str(self.progetto.percorso / (selected_row['file_path'] + ".enc").replace("Media", "media", 1))
+            
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'wb') as file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    file.write(chunk)
+                    
+            messagebox.showinfo("Download Complete", f"File for Row ID {row_id + 1} downloaded successfully!")
+            
+            messagebox.showinfo("Decryption Started", "Decrypting downloaded media file...")
+            
+            db = sqlite3.connect(str(self.progetto.percorso / "sorgenti" / "msgstore.db"))
+            media_key = pandas.read_sql_query(f"""
+SELECT hex(mm.media_key) as media_key
+FROM message_media mm
+WHERE mm.message_row_id = {selected_row['message_row_id']}""", db).loc[0, 'media_key']
+            subprocess.run([str(self.progetto.percorso / "bin/whatsapp-media-decrypt"), 
+                            "-o", str(path).strip(".enc"),
+                            "-t", str(wamd_type_id),
+                            str(path),
+                            str(media_key)])
+            os.remove(path)
+            
+            messagebox.showinfo("Decryption Complete", "Decryption process terminated")
+        except requests.RequestException as e:
+            messagebox.showerror("Download/Decryption Failed", f"Failed to download/decrypt file: {e}")
+        finally:
+            self.progress_bar.stop()  # Stop progress indicator
+
 class Applicazione(ctk.CTkFrame):
     def __init__(self, parent, progetto: Progetto):
         super().__init__(parent)
@@ -625,7 +753,7 @@ class Applicazione(ctk.CTkFrame):
         self.intestazione = ctk.CTkLabel(self.navbar, text="WhaFeR", font=ctk.CTkFont(size=20, weight="bold"), width=200)
         self.pulsanteGruppo = ctk.CTkButton(self.navbar, text="Gruppi", command=self.mostra_vista_gruppi)
         self.pulsanteContatto = ctk.CTkButton(self.navbar, text="Contatti", command=self.mostra_vista_contatti)
-        self.pulsanteMedia = ctk.CTkButton(self.navbar, state="disabled", text="Media")
+        self.pulsanteMedia = ctk.CTkButton(self.navbar, text="Media", command=self.show_media_view)
         self.pulsanteArtefatti = ctk.CTkButton(self.navbar, state="disabled", text="Lista artefatti estratti")
         self.pulsanteContenuti = ctk.CTkButton(self.navbar, text="Mostra contenuti", command=self.mostra_vista_contenuti)
         self.pulsanteImpostazioni = ctk.CTkButton(self.navbar, state="disabled", text="Impostazioni")
@@ -651,6 +779,10 @@ class Applicazione(ctk.CTkFrame):
     def mostra_vista_contenuti(self):
         self.vista.destroy()
         self.vista = ContenutiView(self, self.progetto)
+    
+    def show_media_view(self):
+        self.vista.destroy()
+        self.vista = MediaView(self, self.progetto)
 
 class Introduzione(ctk.CTkFrame):
     def __init__(self, parent):
