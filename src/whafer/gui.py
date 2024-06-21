@@ -1,6 +1,7 @@
 from itertools import islice
 import mimetypes
 import os
+from pathlib import Path
 import subprocess
 import threading
 import tkinter as tk
@@ -14,6 +15,7 @@ from datetime import datetime
 from pandastable import Table, dialogs
 from importlib.resources import files
 
+from magika import Magika
 import requests
 from whafer.interfacce import Sorgente, Contatto, Gruppo, Messaggio
 from whafer.progetti import Progetto
@@ -688,19 +690,20 @@ LEFT JOIN message m ON m."_id" = mm.message_row_id""", self.db)
             
             path = ""
             wamd_type_id = -1
-            if selected_row['mime_type'] is None:
-                selected_row['mime_type'], _ = mimetypes.guess_type(selected_row['file_path'])
+            mime_type = selected_row['mime_type']
+            if mime_type is None:
+                mime_type, _ = mimetypes.guess_type(selected_row['file_path'])
 
-            if 'image/' in selected_row['mime_type']:
+            if 'image/' in mime_type:
                 wamd_type_id = 1
                 if selected_row['file_path'] is None:
                     path = str(self.progetto.percorso / f"media/WhatsApp Images/IMG_message_row_id_{selected_row['message_row_id']}.jpeg.enc")
                 
-            elif 'video/' in selected_row['mime_type']:
+            elif 'video/' in mime_type:
                 wamd_type_id = 2
                 if selected_row['file_path'] is None:
                     path = str(self.progetto.percorso / f"media/WhatsApp Video/VID_message_row_id_{selected_row['message_row_id']}.mp4.enc")
-            elif 'audio/' in selected_row['mime_type']:
+            elif 'audio/' in mime_type:
                 wamd_type_id = 3
                 if selected_row['file_path'] is None:
                     path = str(self.progetto.percorso / f"media/WhatsApp Audio/AUD_message_row_id_{selected_row['message_row_id']}.opus.enc")
@@ -713,6 +716,7 @@ LEFT JOIN message m ON m."_id" = mm.message_row_id""", self.db)
             if selected_row['file_path'] is not None:
                 path = str(self.progetto.percorso / (selected_row['file_path'] + ".enc").replace("Media", "media", 1))
             
+            print(path)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, 'wb') as file:
                 for chunk in response.iter_content(chunk_size=8192):
@@ -732,6 +736,17 @@ WHERE mm.message_row_id = {selected_row['message_row_id']}""", db).loc[0, 'media
                             "-t", str(wamd_type_id),
                             str(path),
                             str(media_key)])
+            
+            if selected_row['file_path'] is None:
+                decrypted_file_path = path.strip(".enc")
+                m = Magika()
+                res = m.identify_path(Path(decrypted_file_path))
+                extension = mimetypes.guess_extension(res.output.mime_type)
+                if extension is not None:
+                    file_root, _ = os.path.splitext(decrypted_file_path)
+                    new_path = file_root + extension
+                    os.rename(decrypted_file_path, new_path)
+
             os.remove(path)
             
             messagebox.showinfo("Decryption Complete", "Decryption process terminated")
